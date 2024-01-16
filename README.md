@@ -9,6 +9,8 @@ sdk_version: 4.13.0
 
 ## Description
 
+The app can be viewed here: https://huggingface.co/spaces/Abdalla07/Fourier_Transform_Simulation
+
 This gradio app showcases the fourier transformation using the winding method showcased
 in 3Blue1Brown video: https://www.youtube.com/watch?v=spUNpyF58BY&t=183s&ab_channel=3Blue1Brown
 
