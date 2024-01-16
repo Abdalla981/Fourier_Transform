@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "audiosignalprocessingforml"
+version = "0.1.0"
+description = ""
+authors = ["Abdalla7 <abdalla.moustafa@cpii.hk>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+librosa = "^0.10.1"
+jupyter = "^1.0.0"
+matplotlib = "<3.8"
+gradio = "^4.13.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
