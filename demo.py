@@ -1,4 +1,3 @@
-import os
 import gradio as gr
 import matplotlib.pyplot as plt
 import numpy as np
@@ -41,7 +40,7 @@ class FourierTransform:
     @staticmethod
     def filter_signal_frequency(signal_frequency: List[Tuple[Any]]):
         filtered = []
-        for f, p in signal_frequency:
+        for f, p, a in signal_frequency:
             try:
                 f = float(f)
             except ValueError:
@@ -49,8 +48,18 @@ class FourierTransform:
             try:
                 p = float(p)
             except ValueError:
+                gr.Warning(
+                    f"Error: phase {p} is not float! Assigning 0.0 instead.",
+                )
                 p = 0.0
-            filtered.append((f, p))
+            try:
+                a = float(a)
+            except ValueError:
+                gr.Warning(
+                    f"Error: amplitude {a} is not float! Assigning 1.0 instead.",
+                )
+                a = 1.0
+            filtered.append((f, p, a))
         return filtered
 
     @staticmethod
@@ -71,17 +80,17 @@ class FourierTransform:
 
     @staticmethod
     def create_signal(
-        frequency: Tuple[float, float],
+        frequency: Tuple[float, float, float],
         time: np.ndarray,
     ) -> np.ndarray:
         if frequency is None:
             return 1
         if isinstance(frequency, (int, float)):
-            frequency = [(frequency, 0.0)]
+            frequency = [(frequency, 0.0, 1.0)]
         return sum(
             [
-                np.sin(2 * np.pi * (f * time + max(-1.0, min(p, 1.0))))
-                for f, p in frequency
+                a * np.sin(2 * np.pi * (f * time + max(-1.0, min(p, 1.0))))
+                for f, p, a in frequency
             ]
         )
 
@@ -146,7 +155,7 @@ class FourierTransform:
         ax.spines["top"].set_color("none")
         ax.margins(x=0, y=0)
         text = ax.text(
-            0.7,
+            0.85,
             0.9,
             f"Winding Frequency: {self.winding_frequency}",
             transform=ax.transAxes,
@@ -192,7 +201,7 @@ class FourierTransform:
                 self.signal_time + self.signal_time / 10,
             ]
         )
-        ax.set_ylim([-m - 0.3, m + 0.3])
+        ax.set_ylim([-m - m / 10, m + m / 10])
         (plotted_graph,) = ax.plot(
             self.time_x,
             signal,
@@ -230,9 +239,9 @@ class FourierTransform:
                 color="red",
                 zorder=11,
             )
-        m = max(self.X[0].max(), self.Y[0].max()) + 0.3
-        ax.set_xlim([-m, m])
-        ax.set_ylim([-m, m])
+        m = max(self.X[0].max(), self.Y[0].max())
+        ax.set_xlim([-m - m / 10, m + m / 10])
+        ax.set_ylim([-m - m / 10, m + m / 10])
         return fig, graph, c_graph, text
 
     def plot_fourier_transform(self):
@@ -245,10 +254,10 @@ class FourierTransform:
             zorder=10,
         )
         x_max = self.winding_frequency * self.frames
-        y_max = max([cc for c in self.c_of_gravity for cc in c]) + 0.1
+        y_max = max([cc for c in self.c_of_gravity for cc in c])
 
         ax.set_xlim([-x_max / 10, x_max + x_max / 10])
-        ax.set_ylim([-y_max, y_max])
+        ax.set_ylim([-y_max - y_max / 10, y_max + y_max / 10])
         return fig, graph, text
 
     def update_signal_graph(self, frame):
@@ -410,11 +419,15 @@ with gr.Blocks(title=TITLE) as app:
     with gr.Row():
         with gr.Column():
             signal_freq_dataframe = gr.Dataframe(
-                headers=["Signal Frequency", "Signal phase"],
-                value=[[2, 0]],
+                headers=[
+                    "Signal Frequency",
+                    "Signal phase",
+                    "Signal Amplitude",
+                ],
+                value=[[3, 0, 1]],
                 interactive=True,
                 row_count=(1, "dynamic"),
-                col_count=(2, "fixed"),
+                col_count=(3, "fixed"),
                 datatype=["number", "number"],
                 type="array",
                 label="Signal data",
@@ -467,9 +480,18 @@ with gr.Blocks(title=TITLE) as app:
             )
             submit_btn = gr.Button(value="Submit", variant="primary")
         with gr.Column():
-            signal_graph_video = gr.Video(label="Signal graph", autoplay=True)
-            winding_graph_video = gr.Video(label="Animation:", autoplay=True)
-            fourier_graph_video = gr.Video(label="Animation:", autoplay=True)
+            signal_graph_video = gr.Video(
+                label="Signal graph",
+                autoplay=True,
+            )
+            winding_graph_video = gr.Video(
+                label="Winding graph:",
+                autoplay=True,
+            )
+            fourier_graph_video = gr.Video(
+                label="Fourier graph:",
+                autoplay=True,
+            )
     signal_time_slider.change(
         update_signal_graph,
         [
@@ -514,4 +536,4 @@ with gr.Blocks(title=TITLE) as app:
 
 
 if __name__ == "__main__":
-    app.launch(show_api=False)
+    app.queue().launch(show_api=False, show_error=True)
