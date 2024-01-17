@@ -194,7 +194,7 @@ class FourierTransform:
         ]
 
         fig, ax, text = self.create_plot()
-        m = max(signal)
+        m = max(np.absolute(signal))
         ax.set_xlim(
             [
                 -self.signal_time / 10,
@@ -239,7 +239,7 @@ class FourierTransform:
                 color="red",
                 zorder=11,
             )
-        m = max(self.X[0].max(), self.Y[0].max())
+        m = max(np.absolute(self.X[0]).max(), np.absolute(self.Y[0]).max())
         ax.set_xlim([-m - m / 10, m + m / 10])
         ax.set_ylim([-m - m / 10, m + m / 10])
         return fig, graph, c_graph, text
@@ -254,7 +254,7 @@ class FourierTransform:
             zorder=10,
         )
         x_max = self.winding_frequency * self.frames
-        y_max = max([cc for c in self.c_of_gravity for cc in c])
+        y_max = max(np.absolute([cc for c in self.c_of_gravity for cc in c]))
 
         ax.set_xlim([-x_max / 10, x_max + x_max / 10])
         ax.set_ylim([-y_max - y_max / 10, y_max + y_max / 10])
