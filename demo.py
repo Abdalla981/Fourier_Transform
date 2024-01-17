@@ -1,6 +1,10 @@
 import gradio as gr
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
+from matplotlib.text import Text
+from matplotlib.collections import LineCollection
 import matplotlib.animation as animation
 from typing import List, Tuple, Literal, Any
 from functools import cached_property
@@ -11,19 +15,21 @@ S_FILE = "signal.mp4"
 W_FILE = "winding.mp4"
 F_FILE = "fourier.mp4"
 
+FRAME_DATA = Tuple[List[np.ndarray], List[np.ndarray], List[Tuple[int, int]]]
+
 
 class FourierTransform:
     def __init__(
         self,
-        signal_time,
-        signal_frequency,
-        winding_frequency,
-        reference_points,
-        frames_per_sec,
-        video_duration,
-        fourier_mode,
-        plot_centre_of_gravity,
-    ):
+        signal_frequency: List[Tuple[Any]],
+        signal_time: float,
+        winding_frequency: float,
+        reference_points: int,
+        frames_per_sec: int,
+        video_duration: int,
+        fourier_mode: Literal["magnitude", "x", "y"],
+        plot_centre_of_gravity: bool,
+    ) -> None:
         self.signal_time = signal_time
         self.signal_frequency = self.filter_signal_frequency(signal_frequency)
         self.winding_frequency = winding_frequency
@@ -32,13 +38,11 @@ class FourierTransform:
         self.video_duration = video_duration
         self.plot_centre_of_gravity = plot_centre_of_gravity
         self.fourier_mode = fourier_mode
-        self.X = []
-        self.Y = []
-        self.c_of_gravity = []
-        self.generate_data()
 
     @staticmethod
-    def filter_signal_frequency(signal_frequency: List[Tuple[Any]]):
+    def filter_signal_frequency(
+        signal_frequency: List[Tuple[Any]],
+    ) -> List[Tuple[float]]:
         filtered = []
         for f, p, a in signal_frequency:
             try:
@@ -120,25 +124,23 @@ class FourierTransform:
             )
 
     @cached_property
-    def time_x(self):
+    def time_x(self) -> np.ndarray:
         return np.linspace(0, self.signal_time, self.reference_points)
 
     @cached_property
-    def interval(self):
+    def interval(self) -> int:
         return int(1000 / self.frames_per_sec)
 
     @cached_property
-    def frames(self):
+    def frames(self) -> int:
         return int(self.video_duration * self.frames_per_sec)
 
     @cached_property
-    def data(self):
-        return [
-            self.generate_data(self.winding_frequency * frame)
-            for frame in range(1, self.frames + 1)
-        ]
+    def data(self) -> List[FRAME_DATA]:
+        X, Y, C = self.generate_data()
+        return {"X": X, "Y": Y, "C": C}
 
-    def create_plot(self):
+    def create_plot(self) -> Tuple[Figure, plt.Axes, Text]:
         fig, ax = plt.subplots(figsize=(15, 10))
         fig.subplots_adjust(
             left=0,
@@ -163,7 +165,8 @@ class FourierTransform:
 
         return fig, ax, text
 
-    def generate_data(self):
+    def generate_data(self) -> FRAME_DATA:
+        X, Y, c_of_gravity = [], [], []
         for frame in range(1, self.frames + 1):
             # create sinusoid and signal
             wrapping_freq = self.create_winding_coordinate(
@@ -173,17 +176,18 @@ class FourierTransform:
             # multiply pure tone and signal
             mult_signal = wrapping_freq * signal
 
-            self.X.append(np.array([x.real for x in mult_signal]))
-            self.Y.append(np.array([x.imag for x in mult_signal]))
+            X.append(np.array([x.real for x in mult_signal]))
+            Y.append(np.array([x.imag for x in mult_signal]))
 
             # calculate and plot centre of gravity
-            self.c_of_gravity.append(
+            c_of_gravity.append(
                 self.calculate_centre_of_gravity(
                     mult_signal,
                 )
             )
+        return X, Y, c_of_gravity
 
-    def plot_signal_graph(self) -> plt.Axes:
+    def plot_signal_graph(self) -> Tuple[Figure, Line2D, LineCollection, Text]:
         if not (self.signal_frequency or self.signal_time or self.time_x):
             return None, None, None, None
 
@@ -218,49 +222,52 @@ class FourierTransform:
         )
         return fig, plotted_graph, plotted_graph2, text
 
-    def plot_winding_graph(self):
+    def plot_winding_graph(self) -> Tuple[Figure, Line2D, Line2D, Text]:
         if not (self.winding_frequency or self.signal_time or self.time_x):
             return None, None, None, None
         c_graph = None
         fig, ax, text = self.create_plot()
         (graph,) = ax.plot(
-            self.X[0],
-            self.Y[0],
+            self.data["X"][0],
+            self.data["Y"][0],
             color="orange",
             linewidth=3,
             zorder=10,
         )
         if self.plot_centre_of_gravity:
             (c_graph,) = ax.plot(
-                [self.c_of_gravity[0][0]],
-                [self.c_of_gravity[0][1]],
+                [self.data["C"][0][0]],
+                [self.data["C"][0][1]],
                 marker="o",
                 markersize=10,
                 color="red",
                 zorder=11,
             )
-        m = max(np.absolute(self.X[0]).max(), np.absolute(self.Y[0]).max())
+        m = max(
+            np.absolute(self.data["X"][-1]).max(),
+            np.absolute(self.data["Y"][-1]).max(),
+        )
         ax.set_xlim([-m - m / 10, m + m / 10])
         ax.set_ylim([-m - m / 10, m + m / 10])
         return fig, graph, c_graph, text
 
-    def plot_fourier_transform(self):
+    def plot_fourier_transform(self) -> Tuple[Figure, Line2D, Text]:
         fig, ax, text = self.create_plot()
         (graph,) = ax.plot(
             0,
-            self.get_magnitude(self.c_of_gravity[0], mode=self.fourier_mode),
+            self.get_magnitude(self.data["C"][0], mode=self.fourier_mode),
             color="#F50247",
             linewidth=3,
             zorder=10,
         )
         x_max = self.winding_frequency * self.frames
-        y_max = max(np.absolute([cc for c in self.c_of_gravity for cc in c]))
+        y_max = max(np.absolute([cc for c in self.data["C"] for cc in c]))
 
         ax.set_xlim([-x_max / 10, x_max + x_max / 10])
         ax.set_ylim([-y_max - y_max / 10, y_max + y_max / 10])
         return fig, graph, text
 
-    def update_signal_graph(self, frame):
+    def update_signal_graph(self, frame: int) -> LineCollection:
         vertical_lines = [
             np.array(
                 [
@@ -279,26 +286,26 @@ class FourierTransform:
         )
         return self.signal_graph_plotted2
 
-    def update_winding_graph(self, frame):
+    def update_winding_graph(self, frame: int) -> List[Any]:
         output = []
-        self.winding_graph.set_xdata(self.X[frame])
-        self.winding_graph.set_ydata(self.Y[frame])
+        self.winding_graph.set_xdata(self.data["X"][frame])
+        self.winding_graph.set_ydata(self.data["Y"][frame])
         output.append(self.winding_graph)
         self.winding_graph_text.set_text(
             f"Wraping Frequency: {self.winding_frequency*frame:.2f}"
         )
         if self.plot_centre_of_gravity:
-            self.winding_graph_c.set_xdata([self.c_of_gravity[frame][0]])
-            self.winding_graph_c.set_ydata([self.c_of_gravity[frame][1]])
+            self.winding_graph_c.set_xdata([self.data["C"][frame][0]])
+            self.winding_graph_c.set_ydata([self.data["C"][frame][1]])
             output.append(self.winding_graph_c)
 
         return output
 
-    def update_fourier_graph(self, frame):
+    def update_fourier_graph(self, frame: int) -> Line2D:
         x = np.linspace(0, self.winding_frequency * frame, frame)
         y = [
             self.get_magnitude(c, mode=self.fourier_mode)
-            for c in self.c_of_gravity[:frame]
+            for c in self.data["C"][:frame]
         ]
         self.fourier_graph.set_xdata(x)
         self.fourier_graph.set_ydata(y)
@@ -309,7 +316,7 @@ class FourierTransform:
 
     def create_fourier_animation(
         self, mode: Literal["all", "signal", "winding", "fourier"]
-    ):
+    ) -> List[str]:
         files = []
         if mode == "all" or mode == "signal":
             (
@@ -366,42 +373,42 @@ class FourierTransform:
 
 
 def update_signal_graph(
-    signal_time,
-    signal_frequency,
-    reference_points,
-):
+    signal_frequency: List[Tuple[Any]],
+    signal_time: float,
+    reference_points: int,
+) -> str:
     animation_obj = FourierTransform(
-        signal_time,
-        signal_frequency,
-        0,
-        reference_points,
-        1,
-        1,
-        "x",
-        False,
+        signal_frequency=signal_frequency,
+        signal_time=signal_time,
+        winding_frequency=0,
+        reference_points=reference_points,
+        frames_per_sec=1,
+        video_duration=1,
+        fourier_mode="x",
+        plot_centre_of_gravity=False,
     )
     return animation_obj.create_fourier_animation(mode="signal")[0]
 
 
 def generate_animation(
-    signal_time,
-    signal_frequency,
-    winding_frequency,
-    reference_points,
-    frames_per_sec,
-    video_duration,
-    fourier_mode,
-    plot_centre_of_gravity,
-):
+    signal_frequency: List[Tuple[Any]],
+    signal_time: float,
+    winding_frequency: float,
+    reference_points: int,
+    frames_per_sec: int,
+    video_duration: int,
+    fourier_mode: Literal["magnitude", "x", "y"],
+    plot_centre_of_gravity: bool,
+) -> List[str]:
     animation_obj = FourierTransform(
-        signal_time,
-        signal_frequency,
-        winding_frequency,
-        reference_points,
-        frames_per_sec,
-        video_duration,
-        fourier_mode,
-        plot_centre_of_gravity,
+        signal_frequency=signal_frequency,
+        signal_time=signal_time,
+        winding_frequency=winding_frequency,
+        reference_points=reference_points,
+        frames_per_sec=frames_per_sec,
+        video_duration=video_duration,
+        fourier_mode=fourier_mode,
+        plot_centre_of_gravity=plot_centre_of_gravity,
     )
     return animation_obj.create_fourier_animation(mode="all")
 
@@ -495,8 +502,8 @@ with gr.Blocks(title=TITLE) as app:
     signal_time_slider.change(
         update_signal_graph,
         [
-            signal_time_slider,
             signal_freq_dataframe,
+            signal_time_slider,
             no_of_reference_points_slider,
         ],
         signal_graph_video,
@@ -504,8 +511,8 @@ with gr.Blocks(title=TITLE) as app:
     signal_freq_dataframe.change(
         update_signal_graph,
         [
-            signal_time_slider,
             signal_freq_dataframe,
+            signal_time_slider,
             no_of_reference_points_slider,
         ],
         signal_graph_video,
@@ -513,8 +520,8 @@ with gr.Blocks(title=TITLE) as app:
     no_of_reference_points_slider.change(
         update_signal_graph,
         [
-            signal_time_slider,
             signal_freq_dataframe,
+            signal_time_slider,
             no_of_reference_points_slider,
         ],
         signal_graph_video,
@@ -522,8 +529,8 @@ with gr.Blocks(title=TITLE) as app:
     submit_btn.click(
         generate_animation,
         [
-            signal_time_slider,
             signal_freq_dataframe,
+            signal_time_slider,
             winding_freq_slider,
             no_of_reference_points_slider,
             frames_per_sec_slider,
