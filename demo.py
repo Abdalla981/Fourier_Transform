@@ -6,7 +6,7 @@ from matplotlib.lines import Line2D
 from matplotlib.text import Text
 from matplotlib.collections import LineCollection
 import matplotlib.animation as animation
-from typing import List, Tuple, Literal, Any
+from typing import List, Tuple, Literal, Any, Dict
 from functools import cached_property
 
 
@@ -136,9 +136,25 @@ class FourierTransform:
         return int(self.video_duration * self.frames_per_sec)
 
     @cached_property
-    def data(self) -> List[FRAME_DATA]:
-        X, Y, C = self.generate_data()
-        return {"X": X, "Y": Y, "C": C}
+    def _data(self) -> Tuple[FRAME_DATA, np.ndarray]:
+        signal = self.create_signal(self.signal_frequency, self.time_x)
+        return self.generate_data(signal), signal
+
+    @cached_property
+    def data(self) -> Dict[str, Any]:
+        (x, y, c), signal = self._data
+        return {
+            "X": x,
+            "Y": y,
+            "C": c,
+            "S": signal,
+            "MXY": max(
+                np.absolute(x[-1]).max(),
+                np.absolute(y[-1]).max(),
+            ),
+            "MC": max(np.absolute([ccc for cc in c for ccc in cc])),
+            "MS": max(np.absolute(signal)),
+        }
 
     def create_plot(self) -> Tuple[Figure, plt.Axes, Text]:
         fig, ax = plt.subplots(figsize=(15, 10))
@@ -165,14 +181,13 @@ class FourierTransform:
 
         return fig, ax, text
 
-    def generate_data(self) -> FRAME_DATA:
+    def generate_data(self, signal: np.ndarray) -> FRAME_DATA:
         X, Y, c_of_gravity = [], [], []
         for frame in range(1, self.frames + 1):
             # create sinusoid and signal
             wrapping_freq = self.create_winding_coordinate(
                 self.winding_frequency * frame, self.time_x
             )
-            signal = self.create_signal(self.signal_frequency, self.time_x)
             # multiply pure tone and signal
             mult_signal = wrapping_freq * signal
 
@@ -191,31 +206,30 @@ class FourierTransform:
         if not (self.signal_frequency or self.signal_time or self.time_x):
             return None, None, None, None
 
-        signal = self.create_signal(self.signal_frequency, self.time_x)
         vertical_lines = [
             x / self.winding_frequency
             for x in range(int(self.signal_time * self.winding_frequency))
         ]
 
         fig, ax, text = self.create_plot()
-        m = max(np.absolute(signal))
         ax.set_xlim(
             [
                 -self.signal_time / 10,
                 self.signal_time + self.signal_time / 10,
             ]
         )
+        m = self.data["MS"]
         ax.set_ylim([-m - m / 10, m + m / 10])
         (plotted_graph,) = ax.plot(
             self.time_x,
-            signal,
+            self.data["S"],
             color="#2779EA",
             linewidth=4,
         )
         plotted_graph2 = ax.vlines(
             vertical_lines,
-            ymin=0,
-            ymax=1.0,
+            ymin=-m,
+            ymax=m,
             color="orange",
             linestyles="dashed",
             linewidth=3,
@@ -243,10 +257,7 @@ class FourierTransform:
                 color="red",
                 zorder=11,
             )
-        m = max(
-            np.absolute(self.data["X"][-1]).max(),
-            np.absolute(self.data["Y"][-1]).max(),
-        )
+        m = self.data["MXY"]
         ax.set_xlim([-m - m / 10, m + m / 10])
         ax.set_ylim([-m - m / 10, m + m / 10])
         return fig, graph, c_graph, text
@@ -261,8 +272,7 @@ class FourierTransform:
             zorder=10,
         )
         x_max = self.winding_frequency * self.frames
-        y_max = max(np.absolute([cc for c in self.data["C"] for cc in c]))
-
+        y_max = self.data["MC"]
         ax.set_xlim([-x_max / 10, x_max + x_max / 10])
         ax.set_ylim([-y_max - y_max / 10, y_max + y_max / 10])
         return fig, graph, text
@@ -271,8 +281,8 @@ class FourierTransform:
         vertical_lines = [
             np.array(
                 [
-                    [x / (self.winding_frequency * frame), 0.0],
-                    [x / (self.winding_frequency * frame), 1.0],
+                    [x / (self.winding_frequency * frame), -self.data["MS"]],
+                    [x / (self.winding_frequency * frame), self.data["MS"]],
                 ]
             )
             for x in range(
